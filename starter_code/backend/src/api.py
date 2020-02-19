@@ -17,6 +17,8 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 @app.after_request
 def after_request(response):
     response.headers.add(
+        'Access-Control-Allow-Origin', 'http://localhost:8100')
+    response.headers.add(
         'Access-Control-Allow-Headers', 'Content-Type, Authorization')
     response.headers.add(
         'Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
@@ -43,18 +45,15 @@ def after_request(response):
 @app.route('/drinks', methods=['GET'])
 def get_drinks():
     drinks = Drink.query.all()
-    drinks_short = []
-    if drinks:
-        for drink in drinks:
-            drinks_short.append(drink.short())
+    drinks_list = []
+    count = 0
+    if len(drinks) != 0:
+        while count < len(drinks):
+            drinks_list.append(drinks[count].short())
+            count = count + 1
     else:
         pass
-            
-    print(drinks)
-    print(drinks_short)
-    drinks = drinks_short
-    return jsonify({"success": True,
-                    "drinks": drinks})
+    return jsonify({"success": True, "drinks": drinks_list}), 200
 
 
 '''
@@ -67,18 +66,21 @@ def get_drinks():
 '''
 @app.route('/drinks-detail', methods=['GET'])
 def get_drinks_detail():
+    if not requires_auth(permission='get:drinks-detail'):
+        raise AuthError({
+            'code': 'invalid_permission',
+            'description': 'Do not have permission to view drinks-detail.'
+        }, 403)
     drinks = Drink.query.all()
-    drinks_long = []
+    drinks_list = []
     if drinks:
         for drink in drinks:
-            drinks_long.append(drink.long())
+            drinks_list.append(drink.long())
     else:
         pass
-    print(drinks)
-    print(drinks_long)
-    drinks = drinks_long
+    drinks = drinks_list
     return jsonify({"success": True,
-                    "drinks": drinks})
+                    "drinks": drinks}), 200
 
 '''
 @TODO implement endpoint
@@ -99,12 +101,13 @@ def add_drinks():
         }, 403)
     else:
         data = request.get_json()
+        new_recipe = data['recipe']
         new_drink = Drink(title=data['title'],
-                            recipe=data['recipe'].long())
+                            recipe=json.dumps(new_recipe))
         new_drink.insert()
     drink = new_drink
     return jsonify({"success": True,
-                    "drinks": drink})
+                    "drinks": [drink.long()]}), 200
 
 '''
 @TODO implement endpoint
@@ -117,7 +120,17 @@ def add_drinks():
     returns status code 200 and json {"success": True, "drinks": drink} where drink an array containing only the updated drink
         or appropriate status code indicating reason for failure
 '''
-
+@app.route('/drinks/<id>', methods=['PATCH'])
+def edit_title(id):
+    drink = Drink.query.filter_by(id=id).one_or_none()
+    if not drink:
+        abort(404)
+    else:
+        data = request.get_json()
+        new_title = data['title']
+        drink.title = new_title
+        drink.update()
+        return jsonify({"success": True, "delete": id}), 200
 
 '''
 @TODO implement endpoint
@@ -129,7 +142,20 @@ def add_drinks():
     returns status code 200 and json {"success": True, "delete": id} where id is the id of the deleted record
         or appropriate status code indicating reason for failure
 '''
-
+@app.route('/drinks/<id>', methods=['DELETE'])
+def delete_drink(id):
+    if not requires_auth(permission='delete:drinks'):
+        raise AuthError({
+            'code': 'invalid_permission',
+            'description': 'permission to delete not granted.'
+        }, 403)
+    drink = Drink.guery.filter_by(id=id).one_or_none()
+    if not drink:
+        abort(404)
+    else:
+        drink.delete()
+        return jsonify({"success": True, "delete": id}), 200
+        
 
 ## Error Handling
 '''
@@ -153,6 +179,13 @@ def unprocessable(error):
                     }), 404
 
 '''
+@app.errorhandler(404)
+def resource_not_found(error):
+    return jsonify({
+                    "success": False, 
+                    "error": 404,
+                    "message": "resource not found"
+                    }), 404
 
 '''
 @TODO implement error handler for 404
